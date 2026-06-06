@@ -14,20 +14,20 @@ import {
 } from "../../shared/middlewares/auth.middleware";
 import { validate } from "../../shared/middlewares/validate.middleware";
 
-const router = Router();
+export const authRouter = Router();
 
 /**
  * @swagger
  * tags:
  *   name: Auth
- *   description: Authentification et gestion des sessions
+ *   description: Authentication and session management
  */
 
 /**
  * @swagger
  * /auth/register:
  *   post:
- *     summary: Inscription d'un nouvel utilisateur
+ *     summary: Register a new user
  *     tags: [Auth]
  *     security: []
  *     requestBody:
@@ -61,35 +61,35 @@ const router = Router();
  *               password:
  *                 type: string
  *                 format: password
- *                 example: motdepasse123
+ *                 example: password123
  *               confirmPassword:
  *                 type: string
  *                 format: password
- *                 example: motdepasse123
+ *                 example: password123
  *               acceptTerms:
  *                 type: boolean
  *                 example: true
  *               referralCode:
  *                 type: string
- *                 example: MP-ABC123
+ *                 example: REF-ABC123
  *               deviceName:
  *                 type: string
  *                 example: iPhone 14
  *     responses:
  *       201:
- *         description: Inscription réussie
+ *         description: User registered successfully
  *       400:
- *         description: Données invalides
+ *         description: Invalid data
  *       409:
- *         description: Email déjà utilisé
+ *         description: Email already in use
  */
-router.post("/register", validate(SignUpDto), AuthController.register);
+authRouter.post("/register", validate(SignUpDto), AuthController.register);
 
 /**
  * @swagger
  * /auth/login:
  *   post:
- *     summary: Connexion d'un utilisateur
+ *     summary: Log in a user
  *     tags: [Auth]
  *     security: []
  *     requestBody:
@@ -109,7 +109,7 @@ router.post("/register", validate(SignUpDto), AuthController.register);
  *               password:
  *                 type: string
  *                 format: password
- *                 example: motdepasse123
+ *                 example: password123
  *               rememberMe:
  *                 type: boolean
  *                 example: false
@@ -118,29 +118,34 @@ router.post("/register", validate(SignUpDto), AuthController.register);
  *                 example: Web Chrome
  *     responses:
  *       200:
- *         description: Connexion réussie
+ *         description: Login successful
  *       401:
- *         description: Email ou mot de passe incorrect
+ *         description: Invalid email or password
  */
-router.post("/login", validate(SignInDto), AuthController.login);
+authRouter.post("/login", validate(SignInDto), AuthController.login);
 
 /**
  * @swagger
  * /auth/logout:
  *   post:
- *     summary: Déconnexion de l'utilisateur
+ *     summary: Log out the current user
  *     tags: [Auth]
  *     responses:
  *       200:
- *         description: Déconnexion réussie
+ *         description: Logout successful
  */
-router.post("/logout", authenticateUser, protectedRoute, AuthController.logout);
+authRouter.post(
+  "/logout",
+  authenticateUser,
+  protectedRoute,
+  AuthController.logout,
+);
 
 /**
  * @swagger
  * /auth/forgot-password:
  *   post:
- *     summary: Demande de réinitialisation du mot de passe
+ *     summary: Request a password reset code
  *     tags: [Auth]
  *     security: []
  *     requestBody:
@@ -158,11 +163,11 @@ router.post("/logout", authenticateUser, protectedRoute, AuthController.logout);
  *                 example: yaji@example.com
  *     responses:
  *       200:
- *         description: Code envoyé si le compte existe
+ *         description: Reset code sent if account exists
  *       429:
- *         description: Trop de requêtes — attendre 1 minute
+ *         description: Too many requests — wait 1 minute
  */
-router.post(
+authRouter.post(
   "/forgot-password",
   validate(ForgotPasswordDto),
   AuthController.forgotPassword,
@@ -172,7 +177,7 @@ router.post(
  * @swagger
  * /auth/verify-reset-code:
  *   post:
- *     summary: Vérification du code de réinitialisation
+ *     summary: Verify a password reset code
  *     tags: [Auth]
  *     security: []
  *     requestBody:
@@ -194,11 +199,11 @@ router.post(
  *                 example: "123456"
  *     responses:
  *       200:
- *         description: Code vérifié avec succès
+ *         description: Code verified successfully
  *       400:
- *         description: Code invalide ou expiré
+ *         description: Invalid or expired code
  */
-router.post(
+authRouter.post(
   "/verify-reset-code",
   validate(VerifyResetCodeDto),
   AuthController.verifyResetCode,
@@ -208,7 +213,7 @@ router.post(
  * @swagger
  * /auth/reset-password:
  *   post:
- *     summary: Réinitialisation du mot de passe
+ *     summary: Reset user password
  *     tags: [Auth]
  *     security: []
  *     requestBody:
@@ -232,14 +237,14 @@ router.post(
  *               newPassword:
  *                 type: string
  *                 format: password
- *                 example: nouveaumotdepasse123
+ *                 example: newpassword123
  *     responses:
  *       200:
- *         description: Mot de passe réinitialisé avec succès
+ *         description: Password reset successfully
  *       400:
- *         description: Code invalide ou expiré
+ *         description: Invalid or expired code
  */
-router.post(
+authRouter.post(
   "/reset-password",
   validate(ResetPasswordDto),
   AuthController.resetPassword,
@@ -249,7 +254,7 @@ router.post(
  * @swagger
  * /auth/refresh-token:
  *   post:
- *     summary: Renouvellement du token d'accès
+ *     summary: Refresh access token
  *     tags: [Auth]
  *     security: []
  *     requestBody:
@@ -266,14 +271,12 @@ router.post(
  *                 example: abc123...
  *     responses:
  *       200:
- *         description: Nouveau token généré
+ *         description: New access token generated
  *       401:
- *         description: Token invalide ou expiré
+ *         description: Invalid or expired token
  */
-router.post(
+authRouter.post(
   "/refresh-token",
   validate(RefreshTokenDto),
   AuthController.refreshAccessToken,
 );
-
-export default router;

@@ -19,7 +19,6 @@ import router from "./routes";
 // ─── Security ────────────────────────────────────────────────────────────────
 app.use(helmet());
 //app.use(rateLimitMiddleware);
-app.use(sanitizeMiddleware);
 app.use(
   cors({
     origin: process.env.FRONTEND_URL || "http://localhost:3000",
@@ -31,7 +30,9 @@ app.use(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
-// ─── Passport ────────────────────────────────────────────────────────────────
+
+// ─── Sanitize ────────────────────────────────────────────────────────────────
+app.use(sanitizeMiddleware);
 
 app.set("json replacer", (key: string, value: unknown) => {
   if (

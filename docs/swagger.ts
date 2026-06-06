@@ -6,7 +6,7 @@ const options: swaggerJsdoc.Options = {
     info: {
       title: "MP Recharge API",
       version: "2.0.0",
-      description: "API de recharge automatique de comptes de paris sportifs",
+      description: "Automatic recharge API for sports betting accounts",
     },
     servers: [
       {

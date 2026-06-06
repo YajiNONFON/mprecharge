@@ -4,21 +4,21 @@ const requiredEnvVars = [
   "DATABASE_URL",
   "JWT",
   "RESEND_API_KEY",
-  /*"JWT_REFRESH_SECRET",
-  "GOOGLE_CLIENT_ID",
-  "GOOGLE_CLIENT_SECRET",
-  "FACEBOOK_APP_ID",
-  "FACEBOOK_APP_SECRET",
-  "CLOUDINARY_CLOUD_NAME",
-  "CLOUDINARY_API_KEY",
-  "CLOUDINARY_API_SECRET",
-  "SENTRY_DSN",
-  "RENDER_EXTERNAL_URL",
-  "FRONTEND_URL",*/
+  "FEEXPAY_SHOP_ID",
+  "FEEXPAY_API_KEY",
+  "FEEXPAY_WEBHOOK_SECRET",
+  "TELEGRAM_BOT_TOKEN",
+  "TELEGRAM_WEBHOOK_BOT_TOKEN",
+  "TELEGRAM_WITHDRAWAL_BOT_TOKEN",
+  "TELEGRAM_AUDIT_BOT_TOKEN",
+  "SUPER_ADMIN_EMAIL",
+  "ADMIN_DEV_EMAIL",
+  "MOCASH_API_URL",
+  "MOCASH_HASH",
+  "MOCASH_CASHDESK_ID",
+  "MOCASH_CASHIER_PASS",
   "BACKEND_URL",
 ] as const;
-
-//const requiredEnvVars = ["DATABASE_URL"] as const;
 
 for (const envVar of requiredEnvVars) {
   if (!process.env[envVar]) {
@@ -28,21 +28,35 @@ for (const envVar of requiredEnvVars) {
 
 export const env = {
   port: process.env.PORT || 5000,
-  databaseUrl: process.env.DATABASE_URL!,
   nodeEnv: process.env.NODE_ENV || "development",
+  databaseUrl: process.env.DATABASE_URL!,
   jwtSecret: process.env.JWT!,
   resendApiKey: process.env.RESEND_API_KEY!,
+  frontendUrl: process.env.FRONTEND_URL,
+  backendUrl: process.env.BACKEND_URL!,
 
-  /*jwtRefreshSecret: process.env.JWT_REFRESH_SECRET!,
-  googleClientId: process.env.GOOGLE_CLIENT_ID!,
-  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-  facebookAppId: process.env.FACEBOOK_APP_ID!,
-  facebookAppSecret: process.env.FACEBOOK_APP_SECRET!,
-  cloudinary_cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
-  cloudinary_api_key: process.env.CLOUDINARY_API_KEY!,
-  cloudinary_api_secret: process.env.CLOUDINARY_API_SECRET!,
-  sentry_dns: process.env.SENTRY_DSN!,
-  render_external_url: process.env.RENDER_EXTERNAL_URL!,*/
-  frontend_url: process.env.FRONTEND_URL,
-  backendUrl: process.env.BACKEND_URL || "http://localhost:5000",
-};
+  feexpay: {
+    shopId: process.env.FEEXPAY_SHOP_ID!,
+    apiKey: process.env.FEEXPAY_API_KEY!,
+    webhookSecret: process.env.FEEXPAY_WEBHOOK_SECRET!,
+  },
+
+  mocash: {
+    apiUrl: process.env.MOCASH_API_URL!,
+    hash: process.env.MOCASH_HASH!,
+    cashDeskId: process.env.MOCASH_CASHDESK_ID!,
+    cashierPass: process.env.MOCASH_CASHIER_PASS!,
+  },
+
+  telegram: {
+    botToken: process.env.TELEGRAM_BOT_TOKEN!,
+    webhookBotToken: process.env.TELEGRAM_WEBHOOK_BOT_TOKEN!,
+    withdrawalBotToken: process.env.TELEGRAM_WITHDRAWAL_BOT_TOKEN!,
+    auditBotToken: process.env.TELEGRAM_AUDIT_BOT_TOKEN!,
+  },
+
+  admin: {
+    superAdminEmail: process.env.SUPER_ADMIN_EMAIL!,
+    devEmail: process.env.ADMIN_DEV_EMAIL!,
+  },
+} as const;

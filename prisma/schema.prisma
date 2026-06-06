@@ -75,25 +75,20 @@ model UserSession {
 // ─────────────────────────────────────────
 
 model Profile {
-  id           String  @id @default(uuid())
-  userId       String  @unique
-  publicId     String  @unique
-  profileImage String?
-
+  id                String   @id @default(uuid())
+  userId            String   @unique
+  publicId          String   @unique
+  profileImage      String?
   activeServiceId   String?
   activeService     Service? @relation(fields: [activeServiceId], references: [id])
-  platformAccountId String?
-
-  // Conservés temporairement — supprimés après migration confirmée
-  oneXbetId    String?
-  oneWinId     String?
-
-  mtnNumber     String?
-  moovNumber    String?
-  celtiisNumber String?
-  orangeNumber  String?
-  created_at    DateTime @default(now())
-  updated_at    DateTime @updatedAt
+  platformAccountId String?  
+  oneXbetId         String?  
+  mtnNumber         String?
+  moovNumber        String?
+  celtiisNumber     String?
+  orangeNumber      String?
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id])
 }
