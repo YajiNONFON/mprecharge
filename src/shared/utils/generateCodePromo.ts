@@ -12,7 +12,7 @@ function generateRandomCode(length: number): string {
 }
 
 export async function generateUniqueReferralCode(
-  prefix: string = "REF",
+  prefix: string = "MPAY",
 ): Promise<string> {
   let unique = false;
   let referralCode = "";

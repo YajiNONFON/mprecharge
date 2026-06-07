@@ -78,5 +78,5 @@ export const convertPointsToFcfa = (
  * Format attendu : REF-XXXXXX (6 caractères alphanumériques majuscules)
  */
 export const isValidReferralCode = (code: string): boolean => {
-  return /^REF-[A-Z0-9]{6}$/.test(code);
+  return /^MPAY-[A-Z0-9]{6}$/.test(code);
 };
