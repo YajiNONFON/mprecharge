@@ -9,7 +9,7 @@ import {
   BadRequestException,
   NotFoundException,
 } from "../../shared/errors/http-errors";
-import { generateUniquePublicId } from "../../shared/utils/generatePublicId";
+import { generateUniqueReferralCode } from "../../shared/utils/generateCodePromo";
 
 // GET PROFILE
 
@@ -110,7 +110,7 @@ export const generateReferralCode = async (userId: string) => {
     );
   }
 
-  const referralCode = await generateUniquePublicId("REF");
+  const referralCode = await generateUniqueReferralCode();
 
   await ProfileRepository.saveReferralCode(userId, referralCode);
 

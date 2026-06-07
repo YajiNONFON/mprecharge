@@ -28,6 +28,7 @@ import {
 import { generateUniquePublicId } from "../../shared/utils/generatePublicId";
 import { generateAndHashResetCode } from "../../shared/utils/generateCode";
 import { sendEmail } from "../../infrastructure/email/email.service";
+import { generateUniqueReferralCode } from "../../shared/utils/generateCodePromo";
 
 // ─────────────────────────────────────────
 // REGISTER
@@ -43,7 +44,7 @@ export const register = async (data: SignUpDtoType, ipAddress?: string) => {
   const role = resolveRole(data.email, data.first_name);
   const password_hash = await bcrypt.hash(data.password, 10);
   const publicId = await generateUniquePublicId("MP");
-  const referralCode = await generateUniquePublicId("REF");
+  const referralCode = await generateUniqueReferralCode();
 
   const newUser = await AuthRepository.createUser({
     first_name: data.first_name,
@@ -56,6 +57,12 @@ export const register = async (data: SignUpDtoType, ipAddress?: string) => {
     referralCode,
     publicId,
   });
+
+  if (data.referralCode) {
+    const { handleReferralOnRegister } =
+      await import("../referral/referral.service");
+    await handleReferralOnRegister(newUser.id, data.referralCode);
+  }
 
   const { accessTokenExpiry, refreshTokenExpiryDays, cookieMaxAge } =
     getTokenExpiry(false);

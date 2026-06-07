@@ -1,24 +1,16 @@
-/**
- * SEED v2 — seed.ts
- * ─────────────────────────────────────────────────────────────────
- * Seed minimal pour MP RECHARGE v2
- * Conserve uniquement le service 1xBet
- * Le modèle Service reste extensible (apiBaseUrl, isActive)
- * ─────────────────────────────────────────────────────────────────
- */
-import { PrismaPg } from "@prisma/adapter-pg";
-
 import { PrismaClient } from "../generated/prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
+import dotenv from "dotenv";
+
+dotenv.config();
+
 const connectionString = process.env.DATABASE_URL!;
-
 const adapter = new PrismaPg({ connectionString });
-
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
   console.log("🌱  Seed MP RECHARGE v2...\n");
 
-  // Service 1xBet — seul service actif pour le moment
   const service = await prisma.service.upsert({
     where: { id: "seed-1xbet" },
     update: {
@@ -31,7 +23,7 @@ async function main() {
       name: "1xBet",
       displayName: "1xBet",
       description: "Service de recharge de compte 1xBet",
-      apiBaseUrl: null, // À renseigner quand l'API 1xBet est configurée
+      apiBaseUrl: null,
       isActive: true,
     },
   });
@@ -43,7 +35,6 @@ async function main() {
 main()
   .catch((e) => {
     console.error("❌  Erreur seed :", e);
-    //process.exit(1);
   })
   .finally(async () => {
     await prisma.$disconnect();

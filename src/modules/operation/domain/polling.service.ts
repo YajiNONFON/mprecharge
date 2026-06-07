@@ -14,15 +14,11 @@ import {
   updateTransactionStatus,
 } from "../operation.repository";
 
-// ─────────────────────────────────────────
 // REGISTRY DES POLLINGS ACTIFS
-// ─────────────────────────────────────────
 
 const activePollings = new Map<string, NodeJS.Timeout>();
 
-// ─────────────────────────────────────────
 // STOP POLLING (appelé par webhook)
-// ─────────────────────────────────────────
 
 export const stopPolling = (transactionId: string): void => {
   const interval = activePollings.get(transactionId);
@@ -33,9 +29,7 @@ export const stopPolling = (transactionId: string): void => {
   }
 };
 
-// ─────────────────────────────────────────
 // HANDLER SUCCÈS — partagé polling rapide + lent
-// ─────────────────────────────────────────
 
 interface PollingContext {
   transactionId: string;
@@ -65,13 +59,17 @@ const handleSuccess = async (ctx: PollingContext): Promise<void> => {
 
   if (serviceName === "1xBet" && accountId) {
     try {
-      // Verrou atomique — évite double crédit avec webhook
       const claimed = await claimTransaction(transactionId);
 
       if (!claimed) {
         console.log(`⏭️ [POLLING] Transaction déjà verrouillée — skip Mocash`);
         return;
       }
+
+      // ← Points attribués dès que le verrou est obtenu
+      const { handlePointsOnTransaction } =
+        await import("../../referral/referral.service");
+      await handlePointsOnTransaction(userId, transactionId, desiredAmount);
 
       const mocashResponse = await mocashClient.depositToAccount({
         userId: accountId,
@@ -126,13 +124,17 @@ const handleSuccess = async (ctx: PollingContext): Promise<void> => {
       console.error(`❌ [POLLING] Erreur Mocash:`, mocashError.message);
     }
   } else {
-    // Autre service — pas de Mocash
     const claimed = await claimTransaction(transactionId);
 
     if (!claimed) {
       console.log(`⏭️ [POLLING] Transaction déjà verrouillée — skip`);
       return;
     }
+
+    // ← Points attribués ici aussi pour les autres services
+    const { handlePointsOnTransaction } =
+      await import("../../referral/referral.service");
+    await handlePointsOnTransaction(userId, transactionId, desiredAmount);
 
     await notificationService.sendNotificationOnly(
       userId,
@@ -162,9 +164,7 @@ const handleSuccess = async (ctx: PollingContext): Promise<void> => {
   }
 };
 
-// ─────────────────────────────────────────
 // HANDLER ÉCHEC — partagé polling rapide + lent
-// ─────────────────────────────────────────
 
 const handleFailure = async (
   ctx: PollingContext,
@@ -205,9 +205,7 @@ const handleFailure = async (
   }
 };
 
-// ─────────────────────────────────────────
 // POLLING LENT (30s × 240 = 2h max)
-// ─────────────────────────────────────────
 
 const startSlowPolling = (
   ctx: PollingContext,
@@ -283,9 +281,7 @@ const startSlowPolling = (
   activePollings.set(ctx.transactionId, slowInterval);
 };
 
-// ─────────────────────────────────────────
 // POLLING RAPIDE (5s × 120 = 10min)
-// ─────────────────────────────────────────
 
 export const startPolling = (
   ctx: PollingContext,

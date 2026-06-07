@@ -8,6 +8,7 @@ import { notificationRouter } from "./modules/notification/notification.routes";
 import { serviceRouter } from "./modules/service/service.routes";
 import { promoRouter } from "./modules/promo/promo.routes";
 import { adminRouter } from "./modules/admin/admin.routes";
+import { referralRouter } from "./modules/referral/referral.routes";
 
 const router = Router();
 
@@ -20,5 +21,6 @@ router.use("/notifications", notificationRouter);
 router.use("/services", serviceRouter);
 router.use("/promos", promoRouter);
 router.use("/admin", adminRouter);
+router.use("/referrals", referralRouter);
 
 export default router;

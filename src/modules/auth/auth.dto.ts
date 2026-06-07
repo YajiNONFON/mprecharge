@@ -32,20 +32,14 @@ export const SignUpDto = z
       .max(64, {
         message: "Le mot de passe doit comporter au maximum 64 caractères",
       }),
-    confirmPassword: z
-      .string()
-      .min(1, { message: "La confirmation du mot de passe est obligatoire" }),
+
     acceptTerms: z.boolean().refine((val) => val === true, {
       message: "Vous devez accepter les conditions générales",
     }),
     referralCode: z.string().optional(),
     deviceName: z.string().optional(),
   })
-  .strict()
-  .refine((data) => data.password === data.confirmPassword, {
-    message: "Les mots de passe ne correspondent pas",
-    path: ["confirmPassword"],
-  });
+  .strict();
 
 export const SignInDto = z
   .object({
