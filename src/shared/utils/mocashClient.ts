@@ -135,6 +135,104 @@ class MocashClient {
     return { signature, confirm };
   }
 
+  private generatePayoutSignature(
+    userId: string,
+    code: string,
+    language: string = "fr",
+  ): { signature: string; confirm: string } {
+    const step1String = `hash=${this.config.hash}&lng=${language}&userid=${userId}`;
+    const step1Hash = crypto
+      .createHash("sha256")
+      .update(step1String)
+      .digest("hex");
+
+    const step2String = `code=${code}&cashierpass=${this.config.cashierpass}&cashdeskid=${this.config.cashdeskid}`;
+    const step2Hash = crypto
+      .createHash("md5")
+      .update(step2String)
+      .digest("hex");
+
+    const signature = crypto
+      .createHash("sha256")
+      .update(step1Hash + step2Hash)
+      .digest("hex");
+
+    const confirmString = `${userId}:${this.config.hash}`;
+    const confirm = crypto
+      .createHash("md5")
+      .update(confirmString)
+      .digest("hex");
+
+    return { signature, confirm };
+  }
+
+  async payoutFromAccount(params: {
+    userId: string;
+    code: string;
+    language?: string;
+  }): Promise<MocashDepositResponse> {
+    try {
+      const language = params.language || "fr";
+
+      const { signature, confirm } = this.generatePayoutSignature(
+        params.userId,
+        params.code,
+        language,
+      );
+
+      const url = `${MOCASH_API_URL}/Deposit/${params.userId}/Payout`;
+
+      const requestBody = {
+        cashdeskId: this.config.cashdeskid,
+        lng: language,
+        code: params.code,
+        confirm,
+      };
+
+      const response = await axios({
+        method: "POST",
+        url,
+        headers: {
+          "Content-Type": "application/json",
+          sign: signature,
+        },
+        data: requestBody,
+        timeout: 30000,
+        validateStatus: () => true,
+      });
+
+      if (response.status === 200 || response.status === 201) {
+        if (response.data.Success === false) {
+          throw new Error(`Mocash Payout: ${response.data.Message}`);
+        }
+
+        return {
+          summa: response.data.Summa,
+          success: response.data.Success,
+          messageId: response.data.OperationId,
+          message: response.data.Message,
+        };
+      }
+
+      if (response.status === 401) {
+        throw new Error("Mocash: Signature invalide (401)");
+      }
+
+      if (response.status === 403) {
+        throw new Error("Mocash: Confirm invalide (403)");
+      }
+
+      throw new Error(
+        `Mocash Payout Error ${response.status}: ${JSON.stringify(response.data)}`,
+      );
+    } catch (error: any) {
+      if (error.message?.includes("Mocash")) {
+        throw error;
+      }
+      throw new Error(`Erreur connexion Mocash Payout: ${error.message}`);
+    }
+  }
+
   async depositToAccount(
     params: DepositParams,
   ): Promise<MocashDepositResponse> {
@@ -316,6 +414,16 @@ export { MocashClient };
  *    - 403 : Confirm invalide (problème de calcul MD5)
  *    - 200 avec Success=false : Refus Mocash (montant invalide, etc.)
  *    - Autres : Erreurs réseau ou serveur
+ *
+ * /**
+ * 2bis. PAYOUT (Prélèvement compte 1xbet)
+ *    - Génération signature step 2 avec code au lieu de summa :
+ *      MD5(code + cashierpass + cashdeskid)
+ *    - Body : cashdeskId (majuscule I) + code + confirm
+ *    - Endpoint : POST /Deposit/{userId}/Payout
+ *    - Utilisé pour les retraits automatiques — prélève immédiatement
+ *    - Le user ne peut plus annuler après appel réussi
+ *
  *
  * CONTRAINTES MOCASH
  * ==================

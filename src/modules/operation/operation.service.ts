@@ -15,6 +15,7 @@ import {
 import { feexpayClient } from "../../shared/utils/feexpayClient";
 import { notificationService } from "../../shared/services/notification.service";
 import { sendWithdrawalRequestMessage } from "../../shared/services/telegram.service";
+import { mocashClient } from "../../shared/utils/mocashClient";
 
 // ─────────────────────────────────────────
 // DEPOSIT
@@ -198,6 +199,53 @@ export const createWithdrawal = async (
     );
   }
 
+  // ── Payout MoCash automatique ──
+  // Prélèvement immédiat — le user ne peut plus annuler après ça
+  if (!data.withdrawalCode) {
+    await OperationRepository.updateTransactionStatus(
+      transaction.id,
+      TransactionsStatus.FAILED,
+    );
+    throw new BadRequestException(
+      "Le code de retrait est obligatoire pour initier le prélèvement.",
+    );
+  }
+
+  try {
+    const mocashResponse = await mocashClient.payoutFromAccount({
+      userId: data.accountId,
+      code: data.withdrawalCode,
+      language: "fr",
+    });
+
+    if (!mocashResponse.success) {
+      await OperationRepository.updateTransactionStatus(
+        transaction.id,
+        TransactionsStatus.FAILED,
+      );
+
+      throw new BadRequestException(
+        mocashResponse.message || "Échec du prélèvement MoCash.",
+      );
+    }
+
+    console.log(
+      `✅ [WITHDRAWAL] Payout MoCash réussi — userId: ${data.accountId}, montant prélevé: ${mocashResponse.summa} FCFA`,
+    );
+  } catch (mocashError: any) {
+    // Si c'est déjà une AppError on la laisse remonter
+    if (mocashError.statusCode) throw mocashError;
+
+    await OperationRepository.updateTransactionStatus(
+      transaction.id,
+      TransactionsStatus.FAILED,
+    );
+
+    throw new BadRequestException(
+      `Impossible d'initier le prélèvement: ${mocashError.message}`,
+    );
+  }
+
   // Numéro de transaction du jour
   const transactionNumber =
     await OperationRepository.findTransactionNumberForToday(transaction.id);
@@ -218,8 +266,8 @@ export const createWithdrawal = async (
   // Notification user
   await notificationService.sendNotificationOnly(
     userId,
-    "Retrait enregistré",
-    `Votre demande de retrait de ${data.amount} XOF depuis ${service.displayName} a bien été reçue et est en cours de traitement.`,
+    "Retrait enregistré ✅",
+    `Votre demande de retrait de ${data.amount} XOF depuis ${service.displayName} a bien été reçue. Le prélèvement a été effectué sur votre compte, votre paiement est en cours de traitement.`,
     "INFO",
     service.id,
   );
