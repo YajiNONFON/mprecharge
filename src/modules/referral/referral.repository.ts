@@ -377,3 +377,99 @@ export const getReferralAdminStats = async () => {
     totalAmountPaid: totalPayoutsAgg._sum.amountPaid ?? 0,
   };
 };
+
+// DÉTAILS PARRAIN ADMIN
+// Retourne les PointTransactions d'un parrain groupées par filleul
+// avec statut payé/en attente selon les ReferralPayout existants
+
+export const findReferrerDetails = async (referrerId: string) => {
+  // Infos parrain + solde
+  const referrer = await prisma.user.findUnique({
+    where: { id: referrerId },
+    select: {
+      id: true,
+      first_name: true,
+      last_name: true,
+      email: true,
+      pointsBalance: true,
+      referralCode: true,
+    },
+  });
+
+  if (!referrer) return null;
+
+  // Toutes les PointTransactions EARN du parrain avec leur transaction source
+  const pointTransactions = await prisma.pointTransaction.findMany({
+    where: {
+      userId: referrerId,
+      type: PointTxType.EARN,
+    },
+    include: {
+      referral: {
+        include: {
+          referred: {
+            select: { first_name: true, last_name: true, email: true },
+          },
+        },
+      },
+      transaction: {
+        select: { amount: true, transpublicId: true, created_at: true },
+      },
+      payout: {
+        select: { id: true, paidAt: true, amountPaid: true },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  // Total points non payés = pointsBalance actuel
+  const totalUnpaidPoints = referrer.pointsBalance;
+
+  // Total points gagnés
+  const totalEarnedPoints = pointTransactions.reduce(
+    (sum, pt) => sum + pt.points,
+    0,
+  );
+
+  // Historique des payouts
+  const payouts = await prisma.referralPayout.findMany({
+    where: { userId: referrerId },
+    orderBy: { paidAt: "desc" },
+    select: {
+      id: true,
+      pointsConverted: true,
+      amountPaid: true,
+      paidAt: true,
+    },
+  });
+
+  return {
+    referrer: {
+      id: referrer.id,
+      name: `${referrer.first_name} ${referrer.last_name}`.trim(),
+      email: referrer.email,
+      referralCode: referrer.referralCode,
+      pointsBalance: referrer.pointsBalance,
+    },
+    stats: {
+      totalEarnedPoints,
+      totalUnpaidPoints,
+      totalPaidPoints: totalEarnedPoints - totalUnpaidPoints,
+    },
+    pointTransactions: pointTransactions.map((pt) => ({
+      id: pt.id,
+      points: pt.points,
+      // payé si ce pointTransaction est lié à un payout
+      status: pt.payoutId ? "PAID" : "PENDING",
+      filleulName: pt.referral?.referred
+        ? `${pt.referral.referred.first_name} ${pt.referral.referred.last_name}`.trim()
+        : null,
+      filleulEmail: pt.referral?.referred?.email ?? null,
+      transactionAmount: pt.transaction?.amount ?? null,
+      transactionRef: pt.transaction?.transpublicId ?? null,
+      createdAt: pt.createdAt,
+      paidAt: pt.payout?.paidAt ?? null,
+    })),
+    payouts,
+  };
+};

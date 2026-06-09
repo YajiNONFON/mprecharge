@@ -6,9 +6,11 @@ import {
   createPayoutController,
   getConversionRateController,
   updateConversionRateController,
+  getReferrerDetails,
 } from "./referral.controller";
 import { validate } from "../../shared/middlewares/validate.middleware";
 import {
+  adminOnly,
   authenticateUser,
   protectedRoute,
   supAdminOnly,
@@ -136,3 +138,70 @@ referralRouter.patch(
   validate(UpdateConversionRateDto),
   updateConversionRateController,
 );
+
+/**
+ * @swagger
+ * /referrals/admin/{referrerId}/details:
+ *   get:
+ *     summary: Get detailed point transactions for a referrer (admin only)
+ *     tags: [Referrals]
+ *     parameters:
+ *       - in: path
+ *         name: referrerId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Referrer details retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 referrer:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                     name:
+ *                       type: string
+ *                     email:
+ *                       type: string
+ *                     pointsBalance:
+ *                       type: integer
+ *                 stats:
+ *                   type: object
+ *                   properties:
+ *                     totalEarnedPoints:
+ *                       type: integer
+ *                     totalUnpaidPoints:
+ *                       type: integer
+ *                     totalPaidPoints:
+ *                       type: integer
+ *                 pointTransactions:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       points:
+ *                         type: integer
+ *                       status:
+ *                         type: string
+ *                         enum: [PAID, PENDING]
+ *                       filleulName:
+ *                         type: string
+ *                       transactionAmount:
+ *                         type: number
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *                 payouts:
+ *                   type: array
+ *       404:
+ *         description: Referrer not found
+ *       403:
+ *         description: Forbidden
+ */
+referralRouter.get("/admin/:referrerId/details", adminOnly, getReferrerDetails);

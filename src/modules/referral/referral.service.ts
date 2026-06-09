@@ -17,6 +17,7 @@ import {
   findAllReferralsPaginated,
   findReferralsByReferrerIdPaginated,
   findPointHistoryPaginated,
+  findReferrerDetails,
 } from "./referral.repository";
 import {
   computeWelcomePoints,
@@ -276,4 +277,10 @@ export const updateConversionRateService = async (
 ): Promise<ConversionRate> => {
   const updated = await updateConversionRate(data.rate);
   return { rate: parseFloat(updated.value), updatedAt: updated.updatedAt };
+};
+
+export const getReferrerDetails = async (referrerId: string) => {
+  const details = await findReferrerDetails(referrerId);
+  if (!details) throw new NotFoundException("Parrain introuvable.");
+  return details;
 };

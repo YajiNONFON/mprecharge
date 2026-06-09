@@ -1,5 +1,7 @@
 import { Router } from "express";
 import * as AdminController from "./admin.controller";
+import * as HealthController from "./domain/health.controller";
+
 import {
   authenticateUser,
   adminOnly,
@@ -123,3 +125,42 @@ adminRouter.get("/stats/chart", AdminController.getChartData);
  *                     example: 42
  */
 adminRouter.get("/stats/peak-hours", AdminController.getPeakHours);
+
+/**
+ * @swagger
+ * /admin/health:
+ *   get:
+ *     summary: Get application health status
+ *     tags: [Admin]
+ *     responses:
+ *       200:
+ *         description: All services OK
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   enum: [OK, KO]
+ *                 checkedAt:
+ *                   type: string
+ *                   format: date-time
+ *                 services:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       name:
+ *                         type: string
+ *                       status:
+ *                         type: string
+ *                         enum: [OK, KO]
+ *                       responseTimeMs:
+ *                         type: integer
+ *                       error:
+ *                         type: string
+ *       503:
+ *         description: One or more services KO
+ */
+adminRouter.get("/health", HealthController.getHealth);

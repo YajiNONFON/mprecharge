@@ -6,6 +6,7 @@ import {
   getConversionRateService,
   updateConversionRateService,
 } from "./referral.service";
+import * as ReferralService from "./referral.service";
 import type {
   CreatePayoutDtoType,
   UpdateConversionRateDtoType,
@@ -83,6 +84,20 @@ export const updateConversionRateController = async (
     const body = req.body as UpdateConversionRateDtoType;
     const data = await updateConversionRateService(body);
     res.status(200).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getReferrerDetails = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const referrerId = req.params.referrerId as string;
+    const details = await ReferralService.getReferrerDetails(referrerId);
+    return res.status(200).json(details);
   } catch (error) {
     next(error);
   }
