@@ -141,6 +141,56 @@ transactionRouter.patch(
   TransactionController.updateTransactionStatus,
 );
 
+/**
+ * @swagger
+ * /transactions/admin/{id}/pipeline:
+ *   get:
+ *     summary: Get transaction pipeline logs (admin only)
+ *     tags: [Transactions]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Pipeline retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 transactionId:
+ *                   type: string
+ *                 transpublicId:
+ *                   type: string
+ *                 type:
+ *                   type: string
+ *                   enum: [DEPOSIT, WITHDRAWAL]
+ *                 currentStatus:
+ *                   type: string
+ *                   enum: [PENDING, SUCCESS, FAILED]
+ *                 pipeline:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       step:
+ *                         type: string
+ *                       status:
+ *                         type: string
+ *                       message:
+ *                         type: string
+ *                       timestamp:
+ *                         type: string
+ *                         format: date-time
+ *       404:
+ *         description: Transaction not found
+ *       403:
+ *         description: Forbidden
+ */
 transactionRouter.get(
   "/admin/:id/pipeline",
   adminOnly,
