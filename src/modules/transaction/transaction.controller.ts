@@ -66,6 +66,21 @@ export const getAllTransactions = async (
   }
 };
 
+// GET /admin/transactions/:id/pipeline
+export const getTransactionPipeline = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const id = req.params.id as string;
+    const pipeline = await TransactionService.getTransactionPipeline(id);
+    return res.status(200).json(pipeline);
+  } catch (error) {
+    next(error);
+  }
+};
+
 // UPDATE TRANSACTION STATUS (admin)
 
 export const updateTransactionStatus = async (
@@ -76,6 +91,7 @@ export const updateTransactionStatus = async (
   try {
     const id = req.params.id as string;
     const { status } = req.body;
+    const adminId = (req as any).user?.id;
 
     if (!Object.values(TransactionsStatus).includes(status)) {
       return res.status(400).json({ message: "Statut invalide." });
@@ -84,6 +100,7 @@ export const updateTransactionStatus = async (
     const updated = await TransactionService.updateTransactionStatus(
       id,
       status,
+      adminId,
     );
 
     return res.status(200).json({

@@ -140,6 +140,7 @@ model Transaction {
   user              User               @relation(fields: [userId], references: [id])
   service           Service            @relation(fields: [serviceId], references: [id])
   pointTransactions PointTransaction[]
+  logs              TransactionLog[]
 }
 
 // ─────────────────────────────────────────
@@ -238,6 +239,19 @@ model Promo {
   imageUrl    String
   description String?
   createdAt   DateTime @default(now())
+
+}
+
+model TransactionLog {
+  id            String             @id @default(uuid())
+  transactionId String
+  step          PipelineStep
+  status        PipelineStepStatus
+  message       String?
+  metadata      Json?
+  createdAt     DateTime           @default(now())
+
+  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
 }
 
 model Contact {
@@ -303,4 +317,20 @@ enum PointTxType {
   EARN
   WELCOME
   CONVERT
+}
+
+enum PipelineStep {
+  INITIATED
+  GATEWAY_PENDING
+  GATEWAY_CONFIRMED
+  MOCASH_CREDIT
+  MOCASH_DEBIT
+  ADMIN_PROCESS
+  COMPLETED
+}
+
+enum PipelineStepStatus {
+  SUCCESS
+  FAILED
+  PENDING
 }

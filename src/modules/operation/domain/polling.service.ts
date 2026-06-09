@@ -1,4 +1,8 @@
-import { TransactionsStatus } from "../../../../generated/prisma/enums";
+import {
+  PipelineStep,
+  PipelineStepStatus,
+  TransactionsStatus,
+} from "../../../../generated/prisma/enums";
 import { notificationService } from "../../../shared/services/notification.service";
 import {
   sendPollingFailureMessage,
@@ -6,6 +10,7 @@ import {
   sendPollingTimeoutAlert,
 } from "../../../shared/services/telegram.service";
 import { mocashClient } from "../../../shared/utils/mocashClient";
+import { createTransactionLog } from "../../transaction/domain/transaction-log.repository";
 import {
   claimTransaction,
   findTransactionById,
@@ -18,8 +23,6 @@ import {
 
 const activePollings = new Map<string, NodeJS.Timeout>();
 
-// STOP POLLING (appelé par webhook)
-
 export const stopPolling = (transactionId: string): void => {
   const interval = activePollings.get(transactionId);
   if (interval) {
@@ -29,7 +32,7 @@ export const stopPolling = (transactionId: string): void => {
   }
 };
 
-// HANDLER SUCCÈS — partagé polling rapide + lent
+// CONTEXT
 
 interface PollingContext {
   transactionId: string;
@@ -44,6 +47,8 @@ interface PollingContext {
   delaySeconds: number;
 }
 
+// HANDLER SUCCÈS
+
 const handleSuccess = async (ctx: PollingContext): Promise<void> => {
   const {
     transactionId,
@@ -57,6 +62,15 @@ const handleSuccess = async (ctx: PollingContext): Promise<void> => {
     delaySeconds,
   } = ctx;
 
+  // ── Log GATEWAY_CONFIRMED ──
+  await createTransactionLog({
+    transactionId,
+    step: PipelineStep.GATEWAY_CONFIRMED,
+    status: PipelineStepStatus.SUCCESS,
+    message: "Paiement confirmé par le réseau",
+    metadata: { delaySeconds },
+  });
+
   if (serviceName === "1xBet" && accountId) {
     try {
       const claimed = await claimTransaction(transactionId);
@@ -66,10 +80,18 @@ const handleSuccess = async (ctx: PollingContext): Promise<void> => {
         return;
       }
 
-      // ← Points attribués dès que le verrou est obtenu
       const { handlePointsOnTransaction } =
         await import("../../referral/referral.service");
       await handlePointsOnTransaction(userId, transactionId, desiredAmount);
+
+      // ── Log MOCASH_CREDIT début ──
+      await createTransactionLog({
+        transactionId,
+        step: PipelineStep.MOCASH_CREDIT,
+        status: PipelineStepStatus.PENDING,
+        message: "Envoi vers 1xBet via MoCash",
+        metadata: { accountId, amount: desiredAmount },
+      });
 
       const mocashResponse = await mocashClient.depositToAccount({
         userId: accountId,
@@ -82,6 +104,23 @@ const handleSuccess = async (ctx: PollingContext): Promise<void> => {
         mocashResponse.success &&
         mocashResponse.summa != null
       ) {
+        // ── Log MOCASH_CREDIT succès ──
+        await createTransactionLog({
+          transactionId,
+          step: PipelineStep.MOCASH_CREDIT,
+          status: PipelineStepStatus.SUCCESS,
+          message: `Compte 1xBet crédité de ${mocashResponse.summa} FCFA`,
+          metadata: { creditedAmount: mocashResponse.summa },
+        });
+
+        // ── Log COMPLETED ──
+        await createTransactionLog({
+          transactionId,
+          step: PipelineStep.COMPLETED,
+          status: PipelineStepStatus.SUCCESS,
+          message: "Transaction terminée avec succès",
+        });
+
         await notificationService.sendNotificationOnly(
           userId,
           "Compte crédité ✅",
@@ -115,15 +154,51 @@ const handleSuccess = async (ctx: PollingContext): Promise<void> => {
 
         console.log(`✅ [POLLING] Crédit Mocash réussi`);
       } else {
+        // ── MoCash retourne success=false ou summa null ──
+        // Transaction reste PENDING (claimTransaction l'a verrouillée à SUCCESS)
+        // L'admin doit intervenir manuellement
+        await createTransactionLog({
+          transactionId,
+          step: PipelineStep.MOCASH_CREDIT,
+          status: PipelineStepStatus.FAILED,
+          message: "MoCash a retourné success=false ou summa null",
+          metadata: { mocashResponse },
+        });
+
+        await createTransactionLog({
+          transactionId,
+          step: PipelineStep.COMPLETED,
+          status: PipelineStepStatus.FAILED,
+          message:
+            "Paiement reçu mais crédit 1xBet échoué — intervention admin requise",
+        });
+
         console.error(
           `❌ [POLLING] Mocash success=false ou summa null:`,
           mocashResponse,
         );
       }
     } catch (mocashError: any) {
+      // ── MoCash throw une exception ──
+      await createTransactionLog({
+        transactionId,
+        step: PipelineStep.MOCASH_CREDIT,
+        status: PipelineStepStatus.FAILED,
+        message: mocashError.message,
+      });
+
+      await createTransactionLog({
+        transactionId,
+        step: PipelineStep.COMPLETED,
+        status: PipelineStepStatus.FAILED,
+        message:
+          "Exception MoCash — paiement reçu mais crédit échoué — intervention admin requise",
+      });
+
       console.error(`❌ [POLLING] Erreur Mocash:`, mocashError.message);
     }
   } else {
+    // Autres services (pas 1xBet)
     const claimed = await claimTransaction(transactionId);
 
     if (!claimed) {
@@ -131,10 +206,16 @@ const handleSuccess = async (ctx: PollingContext): Promise<void> => {
       return;
     }
 
-    // ← Points attribués ici aussi pour les autres services
     const { handlePointsOnTransaction } =
       await import("../../referral/referral.service");
     await handlePointsOnTransaction(userId, transactionId, desiredAmount);
+
+    await createTransactionLog({
+      transactionId,
+      step: PipelineStep.COMPLETED,
+      status: PipelineStepStatus.SUCCESS,
+      message: "Transaction terminée avec succès",
+    });
 
     await notificationService.sendNotificationOnly(
       userId,
@@ -164,7 +245,7 @@ const handleSuccess = async (ctx: PollingContext): Promise<void> => {
   }
 };
 
-// HANDLER ÉCHEC — partagé polling rapide + lent
+// HANDLER ÉCHEC
 
 const handleFailure = async (
   ctx: PollingContext,
@@ -180,6 +261,20 @@ const handleFailure = async (
   } = ctx;
 
   await updateTransactionStatus(transactionId, TransactionsStatus.FAILED);
+
+  await createTransactionLog({
+    transactionId,
+    step: PipelineStep.GATEWAY_CONFIRMED,
+    status: PipelineStepStatus.FAILED,
+    message: reason,
+  });
+
+  await createTransactionLog({
+    transactionId,
+    step: PipelineStep.COMPLETED,
+    status: PipelineStepStatus.FAILED,
+    message: "Transaction échouée",
+  });
 
   await notificationService.sendNotificationOnly(
     userId,
@@ -235,29 +330,18 @@ const startSlowPolling = (
         return;
       }
 
-      console.log(
-        `🔍 [POLLING LENT] Tentative ${attempts}/${MAX_SLOW_ATTEMPTS}`,
-      );
-
       const statusCheck = await gatewayClient.verifyTransaction(ctx.gatewayRef);
 
       if (statusCheck.status === "SUCCESSFUL") {
         clearInterval(slowInterval);
         activePollings.delete(ctx.transactionId);
-        console.log(
-          `✅ [POLLING LENT] SUCCESSFUL après ${attempts} tentatives`,
-        );
-        await handleSuccess({
-          ...ctx,
-          delaySeconds: 600 + attempts * 30,
-        });
+        await handleSuccess({ ...ctx, delaySeconds: 600 + attempts * 30 });
         return;
       }
 
       if (statusCheck.status === "FAILED") {
         clearInterval(slowInterval);
         activePollings.delete(ctx.transactionId);
-        console.log(`❌ [POLLING LENT] FAILED détecté`);
         await handleFailure(
           ctx,
           "Timeout polling lent — client a refusé ou annulé",
@@ -271,10 +355,16 @@ const startSlowPolling = (
         console.log(
           `⏱️ [POLLING LENT] Timeout absolu 2h — webhook prend le relais`,
         );
-        return;
+
+        await createTransactionLog({
+          transactionId: ctx.transactionId,
+          step: PipelineStep.GATEWAY_CONFIRMED,
+          status: PipelineStepStatus.PENDING,
+          message: "Timeout 2h — webhook attendu",
+        });
       }
     } catch (error: any) {
-      console.error(`❌ [POLLING LENT] Erreur inattendue:`, error.message);
+      console.error(`❌ [POLLING LENT] Erreur:`, error.message);
     }
   }, 30000);
 
@@ -293,56 +383,39 @@ export const startPolling = (
   const MAX_ATTEMPTS = 120;
 
   console.log(
-    `🔍 [POLLING RAPIDE] Démarrage pour transaction ${ctx.transactionId} (ref: ${ctx.gatewayRef})`,
+    `🔍 [POLLING RAPIDE] Démarrage pour transaction ${ctx.transactionId}`,
   );
 
   const fastInterval = setInterval(async () => {
     attempts++;
 
     try {
-      // Garde — webhook a peut-être déjà traité
       const current = await findTransactionStatus(ctx.transactionId);
 
       if (current?.status === TransactionsStatus.SUCCESS) {
-        console.log(
-          `✅ [POLLING RAPIDE] Déjà traité par webhook (SUCCESS) — arrêt`,
-        );
         clearInterval(fastInterval);
         activePollings.delete(ctx.transactionId);
         return;
       }
 
       if (current?.status === TransactionsStatus.FAILED) {
-        console.log(
-          `❌ [POLLING RAPIDE] Déjà traité par webhook (FAILED) — arrêt`,
-        );
         clearInterval(fastInterval);
         activePollings.delete(ctx.transactionId);
         return;
       }
 
-      console.log(
-        `🔍 [POLLING RAPIDE] Tentative ${attempts}/${MAX_ATTEMPTS}...`,
-      );
-
       const statusCheck = await gatewayClient.verifyTransaction(ctx.gatewayRef);
-      console.log(`📊 [POLLING RAPIDE] Statut reçu: ${statusCheck.status}`);
 
       if (statusCheck.status === "SUCCESSFUL") {
         clearInterval(fastInterval);
         activePollings.delete(ctx.transactionId);
-        console.log(`✅ [POLLING RAPIDE] SUCCESSFUL après ${attempts * 5}s`);
-        await handleSuccess({
-          ...ctx,
-          delaySeconds: attempts * 5,
-        });
+        await handleSuccess({ ...ctx, delaySeconds: attempts * 5 });
         return;
       }
 
       if (statusCheck.status === "FAILED") {
         clearInterval(fastInterval);
         activePollings.delete(ctx.transactionId);
-        console.log(`❌ [POLLING RAPIDE] FAILED détecté`);
         await handleFailure(ctx, "Client a refusé ou timeout USSD");
         return;
       }
@@ -350,9 +423,6 @@ export const startPolling = (
       if (attempts >= MAX_ATTEMPTS) {
         clearInterval(fastInterval);
         activePollings.delete(ctx.transactionId);
-        console.log(
-          `⏱️ [POLLING RAPIDE] Timeout 10min — passage en polling LENT`,
-        );
 
         const transaction = await findTransactionById(ctx.transactionId);
         if (transaction?.transpublicId) {
@@ -363,11 +433,17 @@ export const startPolling = (
           });
         }
 
+        await createTransactionLog({
+          transactionId: ctx.transactionId,
+          step: PipelineStep.GATEWAY_CONFIRMED,
+          status: PipelineStepStatus.PENDING,
+          message: "Timeout 10min — passage en polling lent",
+        });
+
         startSlowPolling(ctx, gatewayClient);
-        return;
       }
     } catch (error: any) {
-      console.error(`❌ [POLLING RAPIDE] Erreur inattendue:`, error.message);
+      console.error(`❌ [POLLING RAPIDE] Erreur:`, error.message);
       if (attempts >= MAX_ATTEMPTS) {
         clearInterval(fastInterval);
         activePollings.delete(ctx.transactionId);

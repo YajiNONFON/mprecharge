@@ -28,7 +28,7 @@ export const serviceRouter = Router();
  *       200:
  *         description: Services retrieved successfully
  */
-serviceRouter.get("/", ServiceController.getServices);
+serviceRouter.get("/", authenticateUser, ServiceController.getServices);
 
 /**
  * @swagger

@@ -9,6 +9,8 @@ import {
 } from "../../shared/errors/http-errors";
 import { generateTransUniquePublicId } from "../../shared/utils/generatePublicId";
 import {
+  PipelineStep,
+  PipelineStepStatus,
   TransactionsStatus,
   TransactionsType,
 } from "../../../generated/prisma/enums";
@@ -16,44 +18,31 @@ import { feexpayClient } from "../../shared/utils/feexpayClient";
 import { notificationService } from "../../shared/services/notification.service";
 import { sendWithdrawalRequestMessage } from "../../shared/services/telegram.service";
 import { mocashClient } from "../../shared/utils/mocashClient";
+import { createTransactionLog } from "../transaction/domain/transaction-log.repository";
 
-// ─────────────────────────────────────────
 // DEPOSIT
-// ─────────────────────────────────────────
 
 export const createDeposit = async (
   userId: string,
   data: DepositDtoType,
   ipAddress?: string,
 ) => {
-  // Récupération service
   const service = await OperationRepository.findServiceById(data.serviceId);
-  if (!service) {
-    throw new NotFoundException("Service introuvable.");
-  }
+  if (!service) throw new NotFoundException("Service introuvable.");
 
-  // Récupération user
   const user = await OperationRepository.findUserWithProfile(userId);
-  if (!user) {
-    throw new UnauthorizedException("Utilisateur introuvable.");
-  }
+  if (!user) throw new UnauthorizedException("Utilisateur introuvable.");
 
   const clientFullName = `${user.first_name} ${user.last_name}`.trim();
 
-  // Formatage numéro
   const { formattedPhone, error } = formatPhoneNumber(
     data.paymentNumber,
     data.networkType,
   );
+  if (error) throw new BadRequestException(error);
 
-  if (error) {
-    throw new BadRequestException(error);
-  }
-
-  // Calcul frais
   const { desiredAmount, netAmount, fees } = calculateFees(data.amount);
 
-  // Création transaction PENDING
   const transpublicId = await generateTransUniquePublicId("TXR");
 
   const transaction = await OperationRepository.createTransaction({
@@ -71,7 +60,15 @@ export const createDeposit = async (
     transpublicId,
   });
 
-  // Initiation paiement FeeXpay
+  // ── Log INITIATED ──
+  await createTransactionLog({
+    transactionId: transaction.id,
+    step: PipelineStep.INITIATED,
+    status: PipelineStepStatus.SUCCESS,
+    message: `Transaction ${transpublicId} créée`,
+    metadata: { amount: desiredAmount, network: data.networkType },
+  });
+
   try {
     const feexpayResponse = await feexpayClient.requestToPay({
       amount: netAmount,
@@ -82,27 +79,50 @@ export const createDeposit = async (
       email: process.env.FEEXPAY_EMAIL!,
     });
 
-    // Mise à jour providerRef
     await OperationRepository.updateTransactionProviderRef(
       transaction.id,
       feexpayResponse.reference,
     );
 
-    // Échec immédiat FeeXpay
+    // ── Échec immédiat gateway ──
     if (feexpayResponse.skipPolling && feexpayResponse.status === "FAILED") {
       await OperationRepository.updateTransactionStatus(
         transaction.id,
         TransactionsStatus.FAILED,
       );
 
-      console.log(`❌ [INIT] ${data.networkType} échoué dès l'initiation`);
+      await createTransactionLog({
+        transactionId: transaction.id,
+        step: PipelineStep.GATEWAY_PENDING,
+        status: PipelineStepStatus.FAILED,
+        message: `${data.networkType} rejeté dès l'initiation`,
+        metadata: { reference: feexpayResponse.reference },
+      });
+
+      await createTransactionLog({
+        transactionId: transaction.id,
+        step: PipelineStep.COMPLETED,
+        status: PipelineStepStatus.FAILED,
+        message: "Transaction échouée à l'initiation gateway",
+      });
 
       throw new BadRequestException(
         "Paiement échoué. Vérifiez votre solde ou réessayez.",
       );
     }
 
-    // Démarrage polling si nécessaire
+    // ── Log GATEWAY_PENDING ──
+    await createTransactionLog({
+      transactionId: transaction.id,
+      step: PipelineStep.GATEWAY_PENDING,
+      status: PipelineStepStatus.SUCCESS,
+      message: `Réseau contacté — en attente confirmation USSD`,
+      metadata: {
+        reference: feexpayResponse.reference,
+        skipPolling: feexpayResponse.skipPolling,
+      },
+    });
+
     if (!feexpayResponse.skipPolling) {
       startPolling(
         {
@@ -119,13 +139,8 @@ export const createDeposit = async (
         },
         feexpayClient,
       );
-    } else {
-      console.log(
-        `⏭️ [POLLING] Skipped pour ${data.networkType} → webhook prendra le relais`,
-      );
     }
 
-    // Notification user
     await notificationService.sendNotificationOnly(
       userId,
       "Paiement initié",
@@ -142,7 +157,6 @@ export const createDeposit = async (
       status: transaction.status,
     };
   } catch (feexpayError: any) {
-    // Si c'est déjà une AppError on la laisse remonter
     if (feexpayError.statusCode) throw feexpayError;
 
     await OperationRepository.updateTransactionStatus(
@@ -150,33 +164,38 @@ export const createDeposit = async (
       TransactionsStatus.FAILED,
     );
 
+    await createTransactionLog({
+      transactionId: transaction.id,
+      step: PipelineStep.GATEWAY_PENDING,
+      status: PipelineStepStatus.FAILED,
+      message: feexpayError.message,
+    });
+
+    await createTransactionLog({
+      transactionId: transaction.id,
+      step: PipelineStep.COMPLETED,
+      status: PipelineStepStatus.FAILED,
+      message: "Erreur gateway — transaction échouée",
+    });
+
     throw new BadRequestException(
       `Impossible d'initier le paiement: ${feexpayError.message}`,
     );
   }
 };
 
-// ─────────────────────────────────────────
 // WITHDRAWAL
-// ─────────────────────────────────────────
 
 export const createWithdrawal = async (
   userId: string,
   data: WithdrawalDtoType,
 ) => {
-  // Récupération service
   const service = await OperationRepository.findServiceById(data.serviceId);
-  if (!service) {
-    throw new NotFoundException("Service introuvable.");
-  }
+  if (!service) throw new NotFoundException("Service introuvable.");
 
-  // Récupération user
   const user = await OperationRepository.findUserWithProfile(userId);
-  if (!user) {
-    throw new UnauthorizedException("Utilisateur introuvable.");
-  }
+  if (!user) throw new UnauthorizedException("Utilisateur introuvable.");
 
-  // Création transaction PENDING
   const transpublicId = await generateTransUniquePublicId("TXR");
 
   const transaction = await OperationRepository.createTransaction({
@@ -199,13 +218,26 @@ export const createWithdrawal = async (
     );
   }
 
-  // ── Payout MoCash automatique ──
-  // Prélèvement immédiat — le user ne peut plus annuler après ça
+  // ── Log INITIATED ──
+  await createTransactionLog({
+    transactionId: transaction.id,
+    step: PipelineStep.INITIATED,
+    status: PipelineStepStatus.SUCCESS,
+    message: `Retrait ${transpublicId} créé`,
+    metadata: { amount: data.amount, network: data.networkType },
+  });
+
   if (!data.withdrawalCode) {
     await OperationRepository.updateTransactionStatus(
       transaction.id,
       TransactionsStatus.FAILED,
     );
+    await createTransactionLog({
+      transactionId: transaction.id,
+      step: PipelineStep.MOCASH_DEBIT,
+      status: PipelineStepStatus.FAILED,
+      message: "Code de retrait manquant",
+    });
     throw new BadRequestException(
       "Le code de retrait est obligatoire pour initier le prélèvement.",
     );
@@ -224,16 +256,46 @@ export const createWithdrawal = async (
         TransactionsStatus.FAILED,
       );
 
+      await createTransactionLog({
+        transactionId: transaction.id,
+        step: PipelineStep.MOCASH_DEBIT,
+        status: PipelineStepStatus.FAILED,
+        message: mocashResponse.message || "Échec prélèvement MoCash",
+      });
+
+      await createTransactionLog({
+        transactionId: transaction.id,
+        step: PipelineStep.COMPLETED,
+        status: PipelineStepStatus.FAILED,
+        message: "Transaction échouée — prélèvement MoCash rejeté",
+      });
+
       throw new BadRequestException(
         mocashResponse.message || "Échec du prélèvement MoCash.",
       );
     }
 
+    // ── Log MOCASH_DEBIT ──
+    await createTransactionLog({
+      transactionId: transaction.id,
+      step: PipelineStep.MOCASH_DEBIT,
+      status: PipelineStepStatus.SUCCESS,
+      message: `Prélèvement MoCash réussi — ${mocashResponse.summa} FCFA`,
+      metadata: { summa: mocashResponse.summa },
+    });
+
+    // ── Log ADMIN_PROCESS ──
+    await createTransactionLog({
+      transactionId: transaction.id,
+      step: PipelineStep.ADMIN_PROCESS,
+      status: PipelineStepStatus.PENDING,
+      message: "En attente de traitement admin",
+    });
+
     console.log(
-      `✅ [WITHDRAWAL] Payout MoCash réussi — userId: ${data.accountId}, montant prélevé: ${mocashResponse.summa} FCFA`,
+      `✅ [WITHDRAWAL] Payout MoCash réussi — userId: ${data.accountId}, montant: ${mocashResponse.summa} FCFA`,
     );
   } catch (mocashError: any) {
-    // Si c'est déjà une AppError on la laisse remonter
     if (mocashError.statusCode) throw mocashError;
 
     await OperationRepository.updateTransactionStatus(
@@ -241,16 +303,28 @@ export const createWithdrawal = async (
       TransactionsStatus.FAILED,
     );
 
+    await createTransactionLog({
+      transactionId: transaction.id,
+      step: PipelineStep.MOCASH_DEBIT,
+      status: PipelineStepStatus.FAILED,
+      message: mocashError.message,
+    });
+
+    await createTransactionLog({
+      transactionId: transaction.id,
+      step: PipelineStep.COMPLETED,
+      status: PipelineStepStatus.FAILED,
+      message: "Erreur MoCash — transaction échouée",
+    });
+
     throw new BadRequestException(
       `Impossible d'initier le prélèvement: ${mocashError.message}`,
     );
   }
 
-  // Numéro de transaction du jour
   const transactionNumber =
     await OperationRepository.findTransactionNumberForToday(transaction.id);
 
-  // Alerte Telegram support
   await sendWithdrawalRequestMessage({
     transactionNumber,
     transpublicId: transaction.transpublicId,
@@ -263,7 +337,6 @@ export const createWithdrawal = async (
     service: service.displayName,
   });
 
-  // Notification user
   await notificationService.sendNotificationOnly(
     userId,
     "Retrait enregistré ✅",

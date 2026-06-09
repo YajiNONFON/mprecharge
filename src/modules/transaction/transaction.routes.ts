@@ -4,6 +4,7 @@ import {
   authenticateUser,
   protectedRoute,
   adminOnly,
+  supAdminOnly,
 } from "../../shared/middlewares/auth.middleware";
 
 export const transactionRouter = Router();
@@ -136,6 +137,12 @@ transactionRouter.get(
  */
 transactionRouter.patch(
   "/admin/:id/status",
-  adminOnly,
+  supAdminOnly,
   TransactionController.updateTransactionStatus,
+);
+
+transactionRouter.get(
+  "/admin/:id/pipeline",
+  adminOnly,
+  TransactionController.getTransactionPipeline,
 );
