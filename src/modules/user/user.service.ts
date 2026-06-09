@@ -23,6 +23,11 @@ export const getAllUsers = async (params: GetAllUsersParams) => {
     referralCode: u.referral_code,
     pointsBalance: u.points_balance,
     joinedAt: u.created_at,
+    stats: {
+      success: u.success_count,
+      failed: u.failed_count,
+      pending: u.pending_count,
+    },
   }));
 
   return { users: formatted, total, totalPages, currentPage };
@@ -32,7 +37,6 @@ export const getAllUsers = async (params: GetAllUsersParams) => {
 
 export const getUserById = async (id: string) => {
   const user = await UserRepository.findUserById(id);
-
   if (!user) {
     throw new NotFoundException("Utilisateur non trouvé.");
   }
@@ -63,7 +67,6 @@ export const deleteUser = async (adminRole: string, targetId: string) => {
   }
 
   const target = await UserRepository.findUserById(targetId);
-
   if (!target) {
     throw new NotFoundException("Utilisateur non trouvé.");
   }
@@ -93,7 +96,6 @@ export const toggleUserStatus = async (
   }
 
   const target = await UserRepository.findUserById(targetId);
-
   if (!target) {
     throw new NotFoundException("Utilisateur non trouvé.");
   }

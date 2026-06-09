@@ -14,6 +14,17 @@ export const getAllUsers = async (
     const search = req.query.search as string | undefined;
     const role = req.query.role as string | undefined;
     const status = req.query.status as string | undefined;
+    const filter = req.query.filter as
+      | "best"
+      | "at_risk"
+      | "blocked"
+      | undefined;
+
+    if (filter && !["best", "at_risk", "blocked"].includes(filter)) {
+      return res.status(400).json({
+        message: "Filtre invalide. Valeurs acceptées : best, at_risk, blocked.",
+      });
+    }
 
     const result = await UserService.getAllUsers({
       page,
@@ -21,6 +32,7 @@ export const getAllUsers = async (
       search,
       role,
       status,
+      filter,
     });
 
     return res.status(200).json(result);

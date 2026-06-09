@@ -52,6 +52,13 @@ userRouter.use(authenticateUser);
  *           type: string
  *           enum: [active, inactive]
  *           example: active
+ *       - in: query
+ *         name: filter
+ *         schema:
+ *           type: string
+ *           enum: [best, at_risk, blocked]
+ *           example: best
+ *         description: "best: top par volume, at_risk: ratio échecs > 50%, blocked: comptes désactivés"
  *     responses:
  *       200:
  *         description: Users retrieved successfully
